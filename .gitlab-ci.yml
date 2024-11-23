@@ -1,0 +1,52 @@
+review:
+  stage: deploy
+  tags:
+    - windows
+  script:
+    - |
+      # Prepare commits
+      git log --pretty=format:"%h %an %ad %s" --date=short > commits.txt
+
+    - |
+      # Read the file content
+      $fileContent = Get-Content -Path ".\commits.txt" -Raw
+      Write-Host $fileContent
+
+    - |
+      # Define the payload
+      $body = @{
+          model = "qwen2.5-coder:7b"
+          prompt = "Write release notes based on the following git commit messages: $fileContent"
+      } | ConvertTo-Json
+
+    - |
+      # Send the request
+      $response = Invoke-WebRequest `
+        -Uri "http://localhost:11434/api/generate" `
+        -Method "POST" `
+        -Headers @{ "Content-Type" = "application/json" } `
+        -Body $body
+
+    - |
+      # Decode the response content from byte array to string
+      $decodedResponse = [System.Text.Encoding]::UTF8.GetString($response.Content)
+
+      # Split the decoded response into individual JSON objects
+      $responseParts = $decodedResponse -split "(?<=\})\s*(?=\{)" 
+
+      # Initialize an empty string to collect all responses
+      $finalResponse = ""
+
+      # Loop through each part, parse the JSON, and collect the 'response' value
+      foreach ($part in $responseParts) {
+          $cleanedResponse = $part.Trim()  # Remove leading/trailing whitespace
+          if ($cleanedResponse) {
+              $parsedResponse = $cleanedResponse | ConvertFrom-Json
+              # Append the response field to the final response string
+              $finalResponse += $parsedResponse.response
+          }
+      }
+
+    - |
+      # Display the final concatenated response
+      Write-Host $finalResponse
